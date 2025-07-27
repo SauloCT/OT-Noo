@@ -1,40 +1,46 @@
-name: otbr
+version: "3.8"
+
 services:
+
   database:
     image: mariadb:latest
     restart: unless-stopped
+    # Carrega as variáveis do arquivo docker/.env
     env_file:
-      - '.env'
+      - .env
     networks:
       - canary-net
+    # Porta do host → 3306 do container; variável obrigatória em .env
     ports:
-      - '$MYSQL_PORT:3306'
+      - "${MYSQL_PORT}:3306"
     volumes:
-      - 'db-volume:/var/lib/mysql'
-      - ../schema.sql:/docker-entrypoint-initdb.d/init.sql
+      - db-volume:/var/lib/mysql
+      # monta o seu schema.sql (que está na raiz do repo) para inicializar o banco
+      - ../schema.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD", "healthcheck.sh", "--connect"]
+      # usa o mysqladmin built‑in em vez de um script externo
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1"]
       interval: 10s
       timeout: 5s
       retries: 10
 
-
   server:
-    # cpuset: "0-4"
     build:
       context: ..
+      # mantive o Dockerfile.dev (que já suporta multi‑arch); o Docker vai puxar a imagem base ARM64 automaticamente
       dockerfile: docker/Dockerfile.dev
       target: prod
     restart: unless-stopped
     env_file:
-      - '.env'
+      - .env
     networks:
       - canary-net
+    # variáveis de porta definidas no .env: GAME_PROTOCOL_PORT e STATUS_PROTOCOL_PORT
     ports:
-      - '$gameProtocolPort:$gameProtocolPort'
-      - '$statusProtocolPort:$statusProtocolPort'
+      - "${GAME_PROTOCOL_PORT}:${GAME_PROTOCOL_PORT}/udp"
+      - "${STATUS_PROTOCOL_PORT}:${STATUS_PROTOCOL_PORT}"
     volumes:
-      - '../:/srv/canary'
+      - ../:/srv/canary
     depends_on:
       database:
         condition: service_healthy
@@ -42,13 +48,13 @@ services:
   login:
     image: opentibiabr/login-server:latest
     restart: unless-stopped
-    ports:
-      - '$LOGIN_HTTP_PORT:$LOGIN_HTTP_PORT'
-      - '$LOGIN_GRPC_PORT:$LOGIN_GRPC_PORT'
     env_file:
-      - '.env'
+      - .env
     networks:
       - canary-net
+    ports:
+      - "${LOGIN_HTTP_PORT}:${LOGIN_HTTP_PORT}"
+      - "${LOGIN_GRPC_PORT}:${LOGIN_GRPC_PORT}"
     depends_on:
       database:
         condition: service_healthy
